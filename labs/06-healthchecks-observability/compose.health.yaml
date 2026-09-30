@@ -1,0 +1,33 @@
+# LAB 6: Healthcheck Sidecar Pattern for Hardened/Distroless Containers
+# Derived from official docker-compose-patterns skill guidelines
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: labs/05-distroless-hardened/Dockerfile.distroless
+    ports:
+      - "127.0.0.1:8080:8080"
+    # Notice: No healthcheck inside this container because Distroless has no curl/sh.
+    # Baking curl/sh into distroless violates the zero-attack-surface principle.
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  # Healthcheck Sidecar sharing the network namespace of 'app'
+  app-health:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      - app
+    network_mode: "service:app" # Shares loopback with app container
+    entrypoint: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+    restart: unless-stopped

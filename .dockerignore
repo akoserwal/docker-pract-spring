@@ -1,0 +1,38 @@
+# Version control and agent metadata
+.git/
+.gitignore
+.github/
+.agents/
+
+# IDE and editors
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Build artifacts and caches
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar
+**/.cache/
+**/bin/
+
+# Environment files and credentials (defense-in-depth)
+.env
+.env.*
+**/.npmrc
+**/.pypirc
+**/.netrc
+**/settings.xml
+**/*.pem
+**/*.key
+**/*.p12
+
+# Documentation and markdown
+README.md
+**/*.md
+labs/
+docs/
+
+# Temporary and log files
+*.log
+tmp/

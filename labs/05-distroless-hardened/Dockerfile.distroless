@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+# LAB 5: Google Distroless Java 21 Hardened Dockerfile
+#
+# Security Strategy:
+# 1. Base image: gcr.io/distroless/java21-debian12:nonroot
+# 2. Contains ONLY the Java runtime and glibc libraries
+# 3. No package managers (apt/dpkg), no shell (/bin/sh, /bin/bash), no coreutils (curl, wget, ls, cat)
+# 4. Built-in nonroot user (UID 65532)
+
+# Stage 1: Build
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
+WORKDIR /build
+
+COPY sample-app/pom.xml .
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn dependency:go-offline -B
+
+COPY sample-app/src ./src
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn package -B
+
+# Stage 2: Extract Layers
+FROM eclipse-temurin:21-jre-alpine AS extractor
+WORKDIR /extracted
+COPY --from=builder /build/target/*.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract --destination /layers
+
+# Stage 3: Distroless Runtime
+# Pinning image with tag and nonroot variant (UID 65532)
+FROM gcr.io/distroless/java21-debian12:nonroot AS runtime
+WORKDIR /app
+
+# Copy application layers with nonroot ownership
+COPY --link --from=extractor --chown=65532:65532 /layers/dependencies/ ./
+COPY --link --from=extractor --chown=65532:65532 /layers/spring-boot-loader/ ./
+COPY --link --from=extractor --chown=65532:65532 /layers/snapshot-dependencies/ ./
+COPY --link --from=extractor --chown=65532:65532 /layers/application/ ./
+
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# Distroless runs as user 'nonroot' by default in the :nonroot variant
+USER nonroot
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

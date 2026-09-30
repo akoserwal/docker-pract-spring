@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1
+# LAB 4: Security Hardening & Least Privilege Dockerfile
+#
+# Security Implementations:
+# 1. Non-root user (UID/GID 10001) - avoids root breakout risks
+# 2. BuildKit secret mounts - prevents credential leaks into layers
+# 3. Read-only filesystem compatible (writeable /tmp directory)
+# 4. Explicit file permissions (chown) on runtime artifacts
+
+# Stage 1: Build
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
+WORKDIR /build
+
+COPY sample-app/pom.xml .
+
+# Example of BuildKit secret mount for private enterprise registries:
+# Never use ARG or ENV for passwords or tokens.
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn dependency:go-offline -B
+
+COPY sample-app/src ./src
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn package -B
+
+# Stage 2: Extract
+FROM eclipse-temurin:21-jre-alpine AS extractor
+WORKDIR /extracted
+COPY --from=builder /build/target/*.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract --destination /layers
+
+# Stage 3: Hardened Runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
+WORKDIR /app
+
+# Define fixed system UID/GID for least privilege
+ARG UID=10001
+ARG GID=10001
+
+# Create non-root system group and user without login shell
+RUN addgroup -g ${GID} -S appgroup && \
+    adduser -u ${UID} -S appuser -G appgroup -s /sbin/nologin
+
+# Copy layers with explicit ownership to non-root user
+COPY --link --from=extractor --chown=${UID}:${GID} /layers/dependencies/ ./
+COPY --link --from=extractor --chown=${UID}:${GID} /layers/spring-boot-loader/ ./
+COPY --link --from=extractor --chown=${UID}:${GID} /layers/snapshot-dependencies/ ./
+COPY --link --from=extractor --chown=${UID}:${GID} /layers/application/ ./
+
+# Point JVM temporary directory to /tmp (which can be mounted as tmpfs)
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -Djava.io.tmpdir=/tmp"
+
+# Switch to non-root user
+USER ${UID}:${GID}
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

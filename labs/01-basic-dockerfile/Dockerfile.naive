@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+# LAB 1: A deliberately naive runtime image.
+# The builder only makes this lab runnable with one docker build command.
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
+WORKDIR /build
+COPY sample-app/pom.xml .
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn dependency:go-offline -B
+COPY sample-app/src ./src
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn package -B
+
+FROM eclipse-temurin:21-jdk AS runtime
+WORKDIR /app
+COPY --from=builder /build/target/docker-prac-spring-1.0.0.jar app.jar
+EXPOSE 8080
+# Intentionally uses shell form so Lab 1 can show its signal-handling problem.
+ENTRYPOINT java -jar app.jar

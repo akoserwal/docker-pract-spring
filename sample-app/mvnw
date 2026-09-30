@@ -1,0 +1,19 @@
+#!/bin/sh
+# ----------------------------------------------------------------------------
+# Maven Wrapper Executable for UNIX
+# ----------------------------------------------------------------------------
+set -e
+
+WRAPPER_JAR=".mvn/wrapper/maven-wrapper.jar"
+WRAPPER_PROP=".mvn/wrapper/maven-wrapper.properties"
+
+# Ensure we are in project directory
+BASEDIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$BASEDIR"
+
+if command -v mvn >/dev/null 2>&1; then
+    exec mvn "$@"
+else
+    echo "Host mvn not found. In containerized environments, use the provided multi-stage Dockerfile or run via Docker."
+    exit 1
+fi

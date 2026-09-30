@@ -1,0 +1,10 @@
+# Optional: add this file only when a private Maven repository requires settings.xml.
+services:
+  app:
+    build:
+      secrets:
+        - maven-settings
+
+secrets:
+  maven-settings:
+    file: ${MAVEN_SETTINGS_PATH:?Set MAVEN_SETTINGS_PATH to an existing settings.xml file}

@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1
+# LAB 2: Spring Boot 3 Layered JAR Dockerfile
+#
+# Optimization Strategy:
+# 1. Extractor stage unpacks the Spring Boot layered JAR
+# 2. Runtime stage copies layers ordered by frequency of change (least frequent to most frequent)
+# 3. Unchanged dependency layers can be reused on code-only updates
+
+# Stage 1: Build the Spring Boot JAR in the container
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
+WORKDIR /build
+COPY sample-app/pom.xml .
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn dependency:go-offline -B
+COPY sample-app/src ./src
+RUN --mount=type=cache,target=/root/.m2 \
+    --mount=type=secret,id=maven-settings,target=/root/.m2/settings.xml,required=false \
+    mvn package -B
+
+# Stage 2: Extract Spring Boot layers
+FROM eclipse-temurin:21-jre-alpine AS extractor
+WORKDIR /extracted
+COPY --from=builder /build/target/docker-prac-spring-1.0.0.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract --destination /layers
+
+# Stage 3: Runtime Image
+FROM eclipse-temurin:21-jre-alpine AS runtime
+WORKDIR /app
+RUN addgroup -S appgroup -g 10001 && adduser -S appuser -u 10001 -G appgroup
+
+# Best Practice from docker-build-strategies:
+# Copy layers in order of change frequency:
+# 1. Third-party dependencies (rarely change)
+# 2. Spring Boot loader classes (rarely change)
+# 3. Snapshot dependencies (infrequently change)
+# 4. Application code (changes on every commit)
+
+COPY --link --chown=10001:10001 --from=extractor /layers/dependencies/ ./
+COPY --link --chown=10001:10001 --from=extractor /layers/spring-boot-loader/ ./
+COPY --link --chown=10001:10001 --from=extractor /layers/snapshot-dependencies/ ./
+COPY --link --chown=10001:10001 --from=extractor /layers/application/ ./
+
+# Tune container JVM memory ergonomics
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+USER 10001:10001
+EXPOSE 8080
+
+# Spring Boot 3 JarLauncher (exec form preserves PID 1 and signals)
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

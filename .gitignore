@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Build & Dependencies
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar
+**/.cache/
+**/bin/
+
+# Docker & Local Env
+.env
+!.env.example
+*.log
+docker-volumes/
